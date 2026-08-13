@@ -1,0 +1,368 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../apps/api/node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  systemRole   String   @default("COMPANY_MANAGER")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  memberships     CompanyMembership[]
+  posts           Post[]
+  publications    Publication[]
+  postVersions    PostVersion[]
+  auditLogs       AuditLog[]
+
+  @@map("users")
+}
+
+model Company {
+  id               String    @id @default(uuid())
+  name             String
+  slug             String    @unique
+  approvalRequired Boolean   @default(false)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  deletedAt        DateTime?
+
+  memberships       CompanyMembership[]
+  platformConfigs   CompanyPlatformConfig[]
+  socialAccounts    SocialAccount[]
+  posts             Post[]
+  media             Media[]
+  publications      Publication[]
+  comments          Comment[]
+  conversations     Conversation[]
+  analyticsSnapshot AnalyticsSnapshot[]
+  auditLogs         AuditLog[]
+
+  @@map("companies")
+}
+
+model CompanyMembership {
+  id        String   @id @default(uuid())
+  userId    String
+  companyId String
+  role      String
+  createdAt DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, companyId])
+  @@map("company_memberships")
+}
+
+model CompanyPlatformConfig {
+  id                    String   @id @default(uuid())
+  companyId             String
+  platform              String
+  clientId              String
+  encryptedClientSecret String
+  iv                    String
+  authTag               String
+  redirectUri           String
+  scopes                String
+  isActive              Boolean  @default(true)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  company        Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  socialAccounts SocialAccount[]
+
+  @@unique([companyId, platform])
+  @@map("company_platform_configs")
+}
+
+model SocialAccount {
+  id                String   @id @default(uuid())
+  companyId         String
+  platform          String
+  platformAccountId String?
+  accountName       String?
+  status            String   @default("DISCONNECTED")
+  platformConfigId  String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  company         Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  platformConfig  CompanyPlatformConfig? @relation(fields: [platformConfigId], references: [id])
+  oauthCredential OAuthCredential?
+  postTargets     PostTarget[]
+  publicationTargets PublicationTarget[]
+  comments        Comment[]
+  conversations   Conversation[]
+
+  @@map("social_accounts")
+}
+
+model OAuthCredential {
+  id                   String   @id @default(uuid())
+  socialAccountId      String   @unique
+  encryptedAccessToken String
+  encryptedRefreshToken String?
+  iv                   String
+  authTag              String
+  expiresAt            DateTime?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  socialAccount SocialAccount @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+
+  @@map("oauth_credentials")
+}
+
+model Post {
+  id              String    @id @default(uuid())
+  companyId       String
+  creatorId       String
+  contentStatus   String    @default("DRAFT")
+  approvalStatus  String    @default("NOT_REQUIRED")
+  globalMediaMode String    @default("INTELLIGENT")
+  scheduledAt     DateTime?
+  timezone        String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  company    Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  creator    User         @relation(fields: [creatorId], references: [id])
+  targets    PostTarget[]
+  media      Media[]
+  versions   PostVersion[]
+  publications Publication[]
+
+  @@map("posts")
+}
+
+model PostTarget {
+  id                String   @id @default(uuid())
+  postId            String
+  platform          String
+  socialAccountId   String
+  caption           String?
+  title             String?
+  description       String?
+  hashtags          String?
+  keywords          String?
+  thumbnailUrl      String?
+  platformMetadata  Json?
+  externalPostId    String?
+  externalUrl       String?
+  platformStatus    String?
+  errorMessage      String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  post            Post            @relation(fields: [postId], references: [id], onDelete: Cascade)
+  socialAccount   SocialAccount   @relation(fields: [socialAccountId], references: [id])
+  publicationTargets PublicationTarget[]
+  comments        Comment[]
+
+  @@unique([postId, platform])
+  @@map("post_targets")
+}
+
+model PostVersion {
+  id              String   @id @default(uuid())
+  postId          String
+  versionNumber   Int
+  contentSnapshot Json
+  createdById     String
+  createdAt       DateTime @default(now())
+
+  post   Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  creator User @relation(fields: [createdById], references: [id])
+
+  @@map("post_versions")
+}
+
+model Media {
+  id               String   @id @default(uuid())
+  companyId        String
+  postId           String?
+  originalKey      String
+  mimeType         String
+  size             Int
+  processingStatus String   @default("PENDING")
+  createdAt        DateTime @default(now())
+
+  company  Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  post     Post?           @relation(fields: [postId], references: [id], onDelete: SetNull)
+  variants MediaVariant[]
+
+  @@map("media")
+}
+
+model MediaVariant {
+  id              String   @id @default(uuid())
+  mediaId         String
+  platform        String
+  variantKey      String
+  width           Int?
+  height          Int?
+  processingMode  String?
+  createdAt       DateTime @default(now())
+
+  media Media @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+
+  @@map("media_variants")
+}
+
+model Publication {
+  id          String    @id @default(uuid())
+  postId      String
+  companyId   String
+  status      String    @default("PENDING")
+  scheduledAt DateTime?
+  publishedAt DateTime?
+  createdById String
+  createdAt   DateTime  @default(now())
+
+  post    Post                @relation(fields: [postId], references: [id], onDelete: Cascade)
+  company Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  creator User                @relation(fields: [createdById], references: [id])
+  targets PublicationTarget[]
+
+  @@map("publications")
+}
+
+model PublicationTarget {
+  id              String   @id @default(uuid())
+  publicationId   String
+  postTargetId    String
+  platform        String
+  socialAccountId String
+  status          String   @default("PENDING")
+  externalPostId  String?
+  externalUrl     String?
+  attempts        Int      @default(0)
+  idempotencyKey  String?  @unique
+  errorMessage    String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  publication Publication       @relation(fields: [publicationId], references: [id], onDelete: Cascade)
+  postTarget  PostTarget        @relation(fields: [postTargetId], references: [id])
+  socialAccount SocialAccount   @relation(fields: [socialAccountId], references: [id])
+  attempts_history PublishingAttempt[]
+
+  @@map("publication_targets")
+}
+
+model PublishingAttempt {
+  id                  String   @id @default(uuid())
+  publicationTargetId String
+  attemptNumber       Int
+  status              String
+  errorMessage        String?
+  externalPostId      String?
+  createdAt           DateTime @default(now())
+
+  publicationTarget PublicationTarget @relation(fields: [publicationTargetId], references: [id], onDelete: Cascade)
+
+  @@map("publishing_attempts")
+}
+
+model Comment {
+  id                  String   @id @default(uuid())
+  companyId           String
+  socialAccountId     String
+  postTargetId        String
+  platform            String
+  externalCommentId   String
+  authorName          String?
+  content             String
+  createdAt           DateTime @default(now())
+  replyStatus         String?
+  replyContent        String?
+
+  company      Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  socialAccount SocialAccount @relation(fields: [socialAccountId], references: [id])
+  postTarget   PostTarget   @relation(fields: [postTargetId], references: [id])
+
+  @@map("comments")
+}
+
+model Conversation {
+  id                       String   @id @default(uuid())
+  companyId                String
+  socialAccountId          String
+  platform                 String
+  externalConversationId   String
+  participantId            String?
+  participantName          String?
+  lastMessageAt            DateTime?
+  unreadCount              Int      @default(0)
+
+  company      Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  socialAccount SocialAccount @relation(fields: [socialAccountId], references: [id])
+  messages     Message[]
+
+  @@map("conversations")
+}
+
+model Message {
+  id                String   @id @default(uuid())
+  conversationId    String
+  externalMessageId String?
+  sender            String?
+  isFromPage        Boolean  @default(false)
+  content           String
+  timestamp         DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@map("messages")
+}
+
+model AnalyticsSnapshot {
+  id        String   @id @default(uuid())
+  companyId String
+  platform  String
+  metrics   Json
+  snapshotDate DateTime
+  createdAt DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("analytics_snapshots")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  actorId    String
+  companyId  String?
+  action     String
+  targetType String?
+  targetId   String?
+  metadata   Json?
+  result     String?
+  createdAt  DateTime @default(now())
+
+  actor   User     @relation(fields: [actorId], references: [id])
+  company Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+
+  @@map("audit_logs")
+}
+
+model WebhookEvent {
+  id          String   @id @default(uuid())
+  platform    String
+  externalId  String
+  payload     Json
+  processed   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  @@unique([platform, externalId])
+  @@map("webhook_events")
+}
