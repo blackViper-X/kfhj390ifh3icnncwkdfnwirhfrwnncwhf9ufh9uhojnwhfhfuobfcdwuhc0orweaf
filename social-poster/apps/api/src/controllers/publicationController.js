@@ -24,6 +24,8 @@ async function getPublication(req, res, next) {
   try {
     const publication = await publicationService.getPublication(req.params.id, req.companyId);
     res.json({ success: true, data: publication });
+    Agent
+
   } catch (error) {
     next(error);
   }
